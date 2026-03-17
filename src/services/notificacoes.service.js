@@ -38,3 +38,19 @@ export async function markAllRead(userId) {
     .eq('lida', false);
   if (error) throw error;
 }
+
+/**
+ * Insert a notification into the DB.
+ * Errors are logged but not re-thrown so callers aren't blocked by notification failures.
+ */
+export async function createNotificacao(userId, tipo, mensagem, negociacaoId = null) {
+  if (!supabase) return;
+  const { error } = await supabase.from('notificacoes').insert({
+    usuario_id: userId,
+    tipo,
+    mensagem,
+    negociacao_id: negociacaoId,
+    lida: false,
+  });
+  if (error) console.error('[TerraForte] createNotificacao:', error.message);
+}

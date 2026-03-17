@@ -273,3 +273,41 @@ CREATE INDEX idx_negociacoes_vencimento ON negociacoes(data_vencimento);
 CREATE INDEX idx_aditivos_negociacao ON aditivos_contratuais(negociacao_id);
 CREATE INDEX idx_provas_usuario ON provas_forenses(usuario_id);
 CREATE INDEX idx_provas_hash ON provas_forenses(hash_sha256);
+CREATE INDEX idx_notificacoes_usuario ON notificacoes(usuario_id);
+CREATE INDEX idx_notificacoes_lida ON notificacoes(usuario_id, lida);
+CREATE INDEX idx_cobrancas_negociacao ON cobrancas_log(negociacao_id);
+CREATE INDEX idx_pagamentos_usuario ON pagamentos_plataforma(usuario_id);
+
+-- ============================================================
+-- SUPABASE STORAGE — Bucket para Provas Forenses
+-- Run via: Supabase Dashboard > SQL Editor
+-- ============================================================
+
+-- Private bucket: files are accessible only via signed URLs
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'provas-forenses',
+  'provas-forenses',
+  false,
+  10485760,  -- 10 MB per file
+  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
+) ON CONFLICT (id) DO NOTHING;
+
+-- Users may only upload files into their own folder ({userId}/...)
+CREATE POLICY "provas_storage_insert" ON storage.objects
+FOR INSERT WITH CHECK (
+  bucket_id = 'provas-forenses'
+  AND auth.role() = 'authenticated'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
+-- Users may only read their own evidence files
+CREATE POLICY "provas_storage_select" ON storage.objects
+FOR SELECT USING (
+  bucket_id = 'provas-forenses'
+  AND auth.role() = 'authenticated'
+  AND (storage.foldername(name))[1] = auth.uid()::text
+);
+
+-- Users may not delete evidence (immutable after registration)
+-- If deletion is needed, it must be done by an admin role only.

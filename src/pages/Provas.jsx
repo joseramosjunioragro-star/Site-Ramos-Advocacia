@@ -2,38 +2,78 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Upload, Shield, Hash, Clock, Check, AlertCircle, Database } from 'lucide-react';
 import useStore from '../store/useStore';
-import { gerarHashSHA256Simulado } from '../utils/helpers';
+import { sha256, getClientIp } from '../utils/helpers';
+import { uploadProvaFile } from '../services/storage.service';
+import { isSupabaseEnabled } from '../lib/supabase';
 
 export default function Provas() {
   const navigate = useNavigate();
   const addDenuncia = useStore((s) => s.addDenuncia);
   const denuncias = useStore((s) => s.denuncias);
+  const user = useStore((s) => s.user);
 
   const [form, setForm] = useState({ descricao: '', arquivo: null, tipo: '' });
   const [resultado, setResultado] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   const handleSubmit = async () => {
     if (!form.descricao) return;
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1800)); // simulate blockchain reg
+    setUploadError('');
 
-    const hash = gerarHashSHA256Simulado(form.descricao + (form.arquivo?.name || '') + Date.now());
-    const ip = '177.92.' + Math.floor(Math.random() * 255) + '.' + Math.floor(Math.random() * 255);
-    const timestamp = new Date().toUTCString();
+    try {
+      let hash;
+      let arquivoUrl = null;
+      const arquivoNome = form.arquivo?.name || null;
 
-    const prova = {
-      descricao: form.descricao,
-      tipo: form.tipo,
-      arquivo: form.arquivo?.name,
-      hash,
-      ip,
-      timestampUTC: timestamp,
-    };
+      if (form.arquivo) {
+        // Validate file size (10 MB limit)
+        if (form.arquivo.size > 10 * 1024 * 1024) {
+          setUploadError('Arquivo excede o limite de 10 MB.');
+          setLoading(false);
+          return;
+        }
 
-    await addDenuncia(prova);
-    setResultado(prova);
-    setLoading(false);
+        // Real SHA-256 of file contents
+        const arrayBuffer = await form.arquivo.arrayBuffer();
+        hash = await sha256(arrayBuffer);
+
+        // Upload to Supabase Storage if enabled
+        if (isSupabaseEnabled && user?.id) {
+          const storagePath = await uploadProvaFile(user.id, form.arquivo);
+          arquivoUrl = storagePath;
+        }
+      } else {
+        // Hash the description text
+        hash = await sha256(form.descricao + Date.now());
+      }
+
+      const ip = await getClientIp();
+
+      if (!isSupabaseEnabled) {
+        // Simulate blockchain registration delay in offline mode only
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+
+      const prova = {
+        descricao: form.descricao,
+        tipo: form.tipo || 'documento',
+        arquivo: arquivoNome,
+        arquivoUrl,
+        hash,
+        ip,
+        timestampUTC: new Date().toUTCString(),
+      };
+
+      await addDenuncia(prova);
+      setResultado(prova);
+    } catch (err) {
+      console.error('[TerraForte] Erro ao registrar prova:', err);
+      setUploadError(err.message || 'Erro ao registrar prova. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -49,7 +89,10 @@ export default function Provas() {
           </div>
           <div>
             <h1 className="text-xl font-bold">Provas Forenses</h1>
-            <p className="text-purple-200 text-xs">ISO 27037 — Blockchain EOS</p>
+            <p className="text-purple-200 text-xs">
+              SHA-256 real via Web Crypto API
+              {isSupabaseEnabled ? ' • armazenado no Supabase' : ' • modo offline'}
+            </p>
           </div>
         </div>
       </div>
@@ -61,9 +104,9 @@ export default function Provas() {
           <ul className="space-y-1">
             {[
               'Upload de prova (imagem/documento)',
-              'Coleta automática de IP e Timestamp UTC',
-              'Geração de Hash SHA-256 único',
-              'Registro simulado em Blockchain EOS',
+              'Hash SHA-256 real (Web Crypto API)',
+              'IP do dispositivo coletado via ipify',
+              isSupabaseEnabled ? 'Arquivo salvo no Supabase Storage' : 'Blockchain simulado (modo offline)',
               'Documento válido para perícia judicial',
             ].map((item) => (
               <li key={item} className="flex items-start gap-2 text-xs text-purple-700">
@@ -78,6 +121,12 @@ export default function Provas() {
             <h2 className="font-bold text-gray-800 flex items-center gap-2">
               <Upload size={16} className="text-purple-600" /> Registrar Nova Prova
             </h2>
+
+            {uploadError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-medium flex items-center gap-2">
+                <AlertCircle size={14} className="flex-shrink-0" /> {uploadError}
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Tipo de Prova</label>
@@ -106,18 +155,23 @@ export default function Provas() {
               <label className="block border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-purple-400 transition-colors">
                 <Upload size={24} className="text-gray-400 mx-auto mb-2" />
                 <p className="text-sm text-gray-500">Toque para selecionar</p>
-                <p className="text-xs text-gray-400 mt-1">JPG, PNG, PDF até 10MB</p>
+                <p className="text-xs text-gray-400 mt-1">JPG, PNG, PDF até 10 MB</p>
                 <input
                   type="file"
                   className="hidden"
-                  accept="image/*,.pdf"
-                  onChange={(e) => setForm({ ...form, arquivo: e.target.files?.[0] || null })}
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  onChange={(e) => {
+                    setUploadError('');
+                    setForm({ ...form, arquivo: e.target.files?.[0] || null });
+                  }}
                 />
               </label>
               {form.arquivo && (
                 <div className="flex items-center gap-2 mt-2 bg-green-50 rounded-lg px-3 py-2">
                   <Check size={14} className="text-green-500" />
-                  <p className="text-xs text-green-700 font-medium">{form.arquivo.name}</p>
+                  <p className="text-xs text-green-700 font-medium">
+                    {form.arquivo.name} ({(form.arquivo.size / 1024).toFixed(0)} KB)
+                  </p>
                 </div>
               )}
             </div>
@@ -130,7 +184,7 @@ export default function Provas() {
               {loading ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Registrando em Blockchain...
+                  {form.arquivo && isSupabaseEnabled ? 'Enviando ao Supabase...' : 'Computando Hash...'}
                 </>
               ) : (
                 <>
@@ -146,19 +200,23 @@ export default function Provas() {
                 <Check size={32} className="text-green-600" />
               </div>
               <h2 className="font-bold text-gray-800 text-lg">Prova Registrada!</h2>
-              <p className="text-sm text-gray-500">Validade forense confirmada (ISO 27037)</p>
+              <p className="text-sm text-gray-500">
+                {isSupabaseEnabled ? 'Salva no Supabase • validade forense confirmada' : 'Modo offline — validade forense local'}
+              </p>
             </div>
 
             <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Database size={14} className="text-purple-600" />
-                <p className="text-xs font-bold text-purple-800">Hash SHA-256 — Blockchain EOS</p>
+                <p className="text-xs font-bold text-purple-800">
+                  Hash SHA-256 {isSupabaseEnabled ? '(Web Crypto API)' : '(simulado)'}
+                </p>
               </div>
               <p className="font-mono text-xs text-purple-700 break-all bg-white border border-purple-100 rounded-lg p-2">
                 {resultado.hash}
               </p>
               <p className="text-xs text-purple-500 mt-2">
-                "Hash registrado em Blockchain para integridade e validade pericial."
+                Hash {isSupabaseEnabled ? 'criptograficamente seguro' : 'simulado — habilite Supabase para hash real'}.
               </p>
             </div>
 
@@ -169,21 +227,31 @@ export default function Provas() {
               </div>
               <div className="flex items-center gap-2">
                 <AlertCircle size={12} className="text-gray-400" />
-                <p className="text-xs text-gray-600"><strong>IP do Dispositivo:</strong> {resultado.ip}</p>
+                <p className="text-xs text-gray-600">
+                  <strong>IP:</strong> {resultado.ip}
+                  {resultado.ip === '0.0.0.0' && (
+                    <span className="text-orange-500 ml-1">(captura falhou — verificar conexão)</span>
+                  )}
+                </p>
               </div>
               {resultado.arquivo && (
-                <p className="text-xs text-gray-600"><strong>Arquivo:</strong> {resultado.arquivo}</p>
+                <p className="text-xs text-gray-600">
+                  <strong>Arquivo:</strong> {resultado.arquivo}
+                  {resultado.arquivoUrl && isSupabaseEnabled && (
+                    <span className="text-green-600 ml-1">✓ armazenado</span>
+                  )}
+                </p>
               )}
             </div>
 
             <div className="bg-green-50 border border-green-200 rounded-xl p-3">
               <p className="text-xs text-green-700 leading-relaxed font-medium">
-                ✓ Este registro possui validade jurídica e pode ser utilizado como prova eletrônica em processos judiciais, conforme a Lei 14.620/2023 e os padrões ISO 27037 de preservação de provas digitais.
+                ✓ Este registro possui validade jurídica e pode ser utilizado como prova eletrônica em processos judiciais, conforme a Lei 14.620/2023 e os padrões ISO 27037.
               </p>
             </div>
 
             <button
-              onClick={() => { setResultado(null); setForm({ descricao: '', arquivo: null, tipo: '' }); }}
+              onClick={() => { setResultado(null); setForm({ descricao: '', arquivo: null, tipo: '' }); setUploadError(''); }}
               className="w-full btn-primary"
             >
               Registrar Nova Prova

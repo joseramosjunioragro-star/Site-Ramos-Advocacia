@@ -7,7 +7,9 @@ import {
 import useStore from '../store/useStore';
 import StarRating from '../components/StarRating';
 import Modal from '../components/Modal';
-import { getRoleLabel, formatCurrency } from '../utils/helpers';
+import { getRoleLabel, formatCurrency, sha256, getClientIp } from '../utils/helpers';
+import { uploadProvaFile } from '../services/storage.service';
+import { isSupabaseEnabled } from '../lib/supabase';
 
 const PLANOS = [
   {
@@ -58,18 +60,38 @@ export default function Perfil() {
   const concluidas = negociacoes.filter((n) => n.status === 'concluida').length;
   const totalVolume = negociacoes.reduce((acc, n) => acc + (n.valor || 0), 0);
 
-  const [denunciaHash] = useState(() =>
-    Array.from({ length: 64 }, () =>
-      Math.floor(Math.random() * 16).toString(16)
-    ).join('').toUpperCase()
-  );
-
   const [denunciaLoading, setDenunciaLoading] = useState(false);
+  const [computedHash, setComputedHash] = useState('');
 
   const handleDenuncia = async () => {
     setDenunciaLoading(true);
     try {
-      await addDenuncia(denunciaForm);
+      let hash;
+      let arquivoUrl = null;
+
+      if (denunciaForm.arquivo) {
+        const arrayBuffer = await denunciaForm.arquivo.arrayBuffer();
+        hash = await sha256(arrayBuffer);
+        if (isSupabaseEnabled && user?.id) {
+          const storagePath = await uploadProvaFile(user.id, denunciaForm.arquivo);
+          arquivoUrl = storagePath;
+        }
+      } else {
+        hash = await sha256(denunciaForm.descricao + Date.now());
+      }
+
+      const ip = await getClientIp();
+      setComputedHash(hash);
+
+      await addDenuncia({
+        ...denunciaForm,
+        denunciadoNome: denunciaForm.usuario,
+        tipoFraude: denunciaForm.tipo,
+        hash,
+        ip,
+        arquivoUrl,
+        arquivo: denunciaForm.arquivo?.name || null,
+      });
       setDenunciaEnviada(true);
     } catch (err) {
       console.error('[TerraForte] addDenuncia error:', err);
@@ -329,7 +351,7 @@ export default function Perfil() {
             <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-left">
               <p className="text-xs font-bold text-purple-800 mb-2">Hash Blockchain (EOS) — ISO 27037</p>
               <p className="text-xs font-mono text-purple-600 break-all">
-                {denunciaHash}
+                {computedHash}
               </p>
             </div>
             <p className="text-xs text-gray-500">Metadados coletados: IP do navegador, Data/Hora UTC, fingerprint do dispositivo. Registrado em blockchain simulado para validade pericial.</p>

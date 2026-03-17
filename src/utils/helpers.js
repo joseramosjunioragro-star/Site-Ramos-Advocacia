@@ -65,6 +65,59 @@ export function calcularTaxa(valor, plano) {
   return valor * 0.015;
 }
 
+/**
+ * Real SHA-256 via Web Crypto API (secure context / HTTPS required).
+ * Accepts a string, ArrayBuffer, or File/Blob.
+ * Falls back to the simulated version when crypto.subtle is unavailable
+ * (e.g. development over plain HTTP on a non-localhost origin).
+ */
+export async function sha256(input) {
+  if (!crypto?.subtle) {
+    // Graceful degradation – not cryptographically secure
+    console.warn('[TerraForte] crypto.subtle unavailable; using simulated hash');
+    return gerarHashSHA256Simulado(
+      typeof input === 'string' ? input : `file-${Date.now()}`
+    );
+  }
+
+  let data;
+  if (typeof input === 'string') {
+    data = new TextEncoder().encode(input);
+  } else if (input instanceof ArrayBuffer) {
+    data = input;
+  } else {
+    // File or Blob
+    data = await input.arrayBuffer();
+  }
+
+  const buffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+}
+
+/**
+ * Attempt to get the client's public IP via ipify.
+ * Times out after 3 s and returns '0.0.0.0' on failure.
+ * NOTE: For forensic-grade evidence, capture IP server-side (Edge Function).
+ */
+export async function getClientIp() {
+  try {
+    const res = await fetch('https://api.ipify.org?format=json', {
+      signal: AbortSignal.timeout(3000),
+    });
+    const { ip } = await res.json();
+    return ip;
+  } catch {
+    return '0.0.0.0';
+  }
+}
+
+/**
+ * Simulated (non-cryptographic) hash — kept for offline/mock mode only.
+ * Do NOT use for production forensic evidence.
+ */
 export function gerarHashSHA256Simulado(input) {
   let hash = 0;
   const str = String(input) + Date.now();

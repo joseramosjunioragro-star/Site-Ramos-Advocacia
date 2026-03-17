@@ -9,7 +9,7 @@ import useStore from '../store/useStore';
 import Modal from '../components/Modal';
 import {
   formatCurrency, formatDate, getStatusColor,
-  getStatusLabel, getTipoLabel, diasParaVencer, calcularTaxa, gerarHashSHA256Simulado
+  getStatusLabel, getTipoLabel, diasParaVencer, calcularTaxa, sha256
 } from '../utils/helpers';
 
 export default function DetalhesNegociacao() {
@@ -67,7 +67,7 @@ export default function DetalhesNegociacao() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      const hash = gerarHashSHA256Simulado(neg.id + neg.timestampAssinatura);
+      const hash = await sha256(neg.id + (neg.timestampAssinatura || '') + (neg.hashContrato || ''));
       setPacoteForense({
         hash,
         arquivos: ['Contrato_' + neg.id + '.pdf', 'Historico_Aditivos.pdf', 'Log_Timestamps.json', 'IP_Evidence.txt'],

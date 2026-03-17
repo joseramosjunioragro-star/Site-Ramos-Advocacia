@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Shield, Eye, EyeOff, Leaf } from 'lucide-react';
 import useStore from '../store/useStore';
 import { isSupabaseEnabled } from '../lib/supabase';
-import { signIn, signUp } from '../services/auth.service';
-import { createProfile, getProfile } from '../services/usuarios.service';
+import { signIn, signUp, sendPasswordReset } from '../services/auth.service';
+import { createProfile } from '../services/usuarios.service';
 
 const ROLES = [
   { value: 'produtor', label: 'Produtor Rural', icon: '🌾' },
@@ -21,6 +21,9 @@ export default function Login() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showForgot, setShowForgot] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
   const [form, setForm] = useState({
     email: isSupabaseEnabled ? '' : 'joao@terraforte.com.br',
     password: isSupabaseEnabled ? '' : '123456',
@@ -84,6 +87,20 @@ export default function Login() {
       } else {
         setError(msg);
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePasswordReset = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      await sendPasswordReset(resetEmail);
+      setResetSent(true);
+    } catch (err) {
+      setError(err?.message || 'Erro ao enviar e-mail de recuperação.');
     } finally {
       setLoading(false);
     }
@@ -263,6 +280,53 @@ export default function Login() {
               {loading ? 'Processando...' : tab === 'login' ? 'Entrar na Plataforma' : 'Criar Minha Conta'}
             </button>
           </form>
+
+          {/* Forgot password (login tab + Supabase only) */}
+          {tab === 'login' && isSupabaseEnabled && !showForgot && (
+            <button
+              type="button"
+              onClick={() => { setShowForgot(true); setError(''); }}
+              className="w-full text-sm text-gray-400 hover:text-green-600 transition-colors mt-1 text-center"
+            >
+              Esqueceu a senha?
+            </button>
+          )}
+
+          {showForgot && (
+            <div className="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
+              {resetSent ? (
+                <p className="text-sm text-green-700 font-medium text-center">
+                  ✓ Link enviado para <strong>{resetEmail}</strong>. Verifique sua caixa de entrada.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-600">Digite seu e-mail para receber o link de redefinição:</p>
+                  <input
+                    type="email"
+                    className="input-field"
+                    placeholder="seu@email.com"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePasswordReset}
+                    disabled={!resetEmail || loading}
+                    className="w-full btn-primary py-3 text-sm disabled:opacity-60"
+                  >
+                    {loading ? 'Enviando...' : 'Enviar Link de Redefinição'}
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => { setShowForgot(false); setResetSent(false); setResetEmail(''); }}
+                className="w-full text-sm text-gray-400 py-1 hover:text-gray-600"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
 
           <div className="my-4 flex items-center gap-3">
             <div className="flex-1 h-px bg-gray-100" />

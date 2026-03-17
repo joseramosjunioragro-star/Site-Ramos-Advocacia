@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { sha256 } from '../utils/helpers';
 
 function mapAditivo(row) {
   return {
@@ -71,7 +72,6 @@ function mapNegToDb(neg, produtorId) {
     comprador_solidario: neg.compradorSolidario || false,
     ip_assinatura: neg.ipAssinatura || null,
     timestamp_assinatura: neg.timestampAssinatura || new Date().toISOString(),
-    hash_contrato: neg.hashContrato || null,
     clausula_imprevisibilidade: neg.clausulaImprevisibilidade || false,
     clausula_corretor_solidario: neg.clausulaCorretorSolidario || false,
   };
@@ -88,9 +88,25 @@ export async function listNegociacoes(userId) {
 }
 
 export async function createNegociacao(neg, produtorId) {
+  const ts = new Date().toISOString();
+  const dbPayload = mapNegToDb(neg, produtorId);
+  dbPayload.timestamp_assinatura = ts;
+
+  // Compute real SHA-256 hash of canonical contract data for forensic integrity
+  const contractString = JSON.stringify({
+    produtor_id: produtorId,
+    tipo: dbPayload.tipo,
+    produto: dbPayload.produto,
+    valor: dbPayload.valor,
+    data_vencimento: dbPayload.data_vencimento,
+    comprador_nome: dbPayload.comprador_nome,
+    timestamp: ts,
+  });
+  dbPayload.hash_contrato = await sha256(contractString);
+
   const { data, error } = await supabase
     .from('negociacoes')
-    .insert(mapNegToDb(neg, produtorId))
+    .insert(dbPayload)
     .select('*, aditivos_contratuais(*)')
     .single();
   if (error) throw error;
