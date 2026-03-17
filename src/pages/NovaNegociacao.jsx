@@ -23,16 +23,15 @@ function FormPadrao({ onSubmit, user }) {
     comprador: '',
     compradorWhatsapp: '',
     compradorCPF: '',
-    assumeResponsabilidade: false,
   });
   const [showCorretorAlert, setShowCorretorAlert] = useState(false);
 
   const handleNext = () => {
     if (step < 3) setStep(step + 1);
     else {
+      // Corretor sem comprador indicado → assume responsabilidade solidária
       if (user.role === 'corretor' && !form.comprador) {
         setShowCorretorAlert(true);
-        setForm((f) => ({ ...f, assumeResponsabilidade: true }));
         return;
       }
       onSubmit({ ...form, tipo: 'padrao', status: 'pendente' });
@@ -44,8 +43,10 @@ function FormPadrao({ onSubmit, user }) {
     onSubmit({ ...form, tipo: 'padrao', status: 'pendente', compradorSolidario: true });
   };
 
-  const isStep1Valid = form.produto && form.quantidade && form.valor;
+  const isStep1Valid = form.produto && form.quantidade && form.valor && parseFloat(form.valor) > 0;
   const isStep2Valid = form.local && form.destino && form.dataVencimento;
+  // Step 3: non-corretores must provide at least the buyer name
+  const isStep3Valid = user.role === 'corretor' || form.comprador.trim().length > 0;
 
   return (
     <>
@@ -134,8 +135,18 @@ function FormPadrao({ onSubmit, user }) {
             </div>
           )}
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Nome do Comprador</label>
-            <input className="input-field" placeholder="Nome completo ou razão social" value={form.comprador} onChange={(e) => setForm({ ...form, comprador: e.target.value })} />
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Nome do Comprador{user.role !== 'corretor' && ' *'}
+            </label>
+            <input
+              className={`input-field ${user.role !== 'corretor' && !form.comprador ? 'border-red-300' : ''}`}
+              placeholder="Nome completo ou razão social"
+              value={form.comprador}
+              onChange={(e) => setForm({ ...form, comprador: e.target.value })}
+            />
+            {user.role !== 'corretor' && !form.comprador && (
+              <p className="text-xs text-red-500 mt-1">Campo obrigatório para não-corretores.</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">CPF / CNPJ do Comprador</label>
@@ -170,10 +181,14 @@ function FormPadrao({ onSubmit, user }) {
         )}
         <button
           onClick={handleNext}
-          disabled={(step === 1 && !isStep1Valid) || (step === 2 && !isStep2Valid)}
+          disabled={
+            (step === 1 && !isStep1Valid) ||
+            (step === 2 && !isStep2Valid) ||
+            (step === 3 && !isStep3Valid)
+          }
           className="flex-1 btn-primary flex items-center justify-center gap-2 disabled:opacity-50"
         >
-          {step === 3 ? <><Check size={16} /> Gerar Contrato</> : <>{step === 1 ? 'Próximo' : 'Próximo'} <ArrowRight size={16} /></>}
+          {step === 3 ? <><Check size={16} /> Gerar Contrato</> : <>Próximo <ArrowRight size={16} /></>}
         </button>
       </div>
 

@@ -149,13 +149,20 @@ const useStore = create((set, get) => ({
     ),
   })),
 
+  // Clamp reputation between 1.0 and 5.0
+  _adjustReputation: (current, delta) => Math.min(5.0, Math.max(1.0, +(current + delta).toFixed(1))),
+
   aceitarAditivo: (negId, aditivoId) => set((state) => ({
+    // Score is NOT penalized when an aditivo is mutually accepted — only update status
     negociacoes: state.negociacoes.map((n) =>
       n.id === negId
         ? {
             ...n,
+            // Also update the contract due date to the accepted new date
+            dataVencimento: n.aditivos.find((a) => a.id === aditivoId)?.novaData || n.dataVencimento,
+            status: 'ativa',
             aditivos: n.aditivos.map((a) =>
-              a.id === aditivoId ? { ...a, status: 'aceito' } : a
+              a.id === aditivoId ? { ...a, status: 'aceito', aceitoEm: new Date().toISOString() } : a
             ),
           }
         : n
@@ -163,17 +170,26 @@ const useStore = create((set, get) => ({
   })),
 
   executarDivida: (negId) => set((state) => {
-    const updated = state.negociacoes.map((n) =>
-      n.id === negId ? { ...n, status: 'em_execucao' } : n
-    );
-    // Penalizar reputação do devedor (simulado)
-    return { negociacoes: updated };
+    // Penalizar reputação do credor logado pelo não recebimento (−0.5)
+    const newReputation = Math.min(5.0, Math.max(1.0, +(state.user.reputation - 0.5).toFixed(1)));
+    return {
+      negociacoes: state.negociacoes.map((n) =>
+        n.id === negId ? { ...n, status: 'em_execucao' } : n
+      ),
+      // In production this would target the debtor's record via Supabase RPC
+      user: { ...state.user, reputation: newReputation },
+    };
   }),
 
   notificarDevedor: (negId) => set((state) => ({
     negociacoes: state.negociacoes.map((n) =>
       n.id === negId ? { ...n, status: 'notificada' } : n
     ),
+    // Penalizar score do usuário logado em −0.5 ao notificar devedor
+    user: {
+      ...state.user,
+      reputation: Math.min(5.0, Math.max(1.0, +(state.user.reputation - 0.5).toFixed(1))),
+    },
   })),
 
   darBaixa: (negId) => set((state) => ({

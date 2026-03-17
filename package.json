@@ -1,15 +1,28 @@
 {
-  "name": "site-ramos-advocacia",
+  "name": "terraforte",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
+    "build:prod": "NODE_ENV=production vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "cap:init": "npx cap init TerraForte br.com.terraforte.app --web-dir dist",
+    "cap:add:android": "npx cap add android",
+    "cap:add:ios": "npx cap add ios",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios",
+    "cap:run:android": "npm run build && npx cap sync android && npx cap run android",
+    "cap:run:ios": "npm run build && npx cap sync ios && npx cap run ios"
   },
   "dependencies": {
+    "@capacitor/android": "^8.2.0",
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/core": "^8.2.0",
+    "@capacitor/ios": "^8.2.0",
     "@supabase/supabase-js": "^2.99.2",
     "@tailwindcss/vite": "^4.2.1",
     "lucide-react": "^0.577.0",

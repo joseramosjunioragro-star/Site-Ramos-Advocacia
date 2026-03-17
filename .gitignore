@@ -12,6 +12,15 @@ dist
 dist-ssr
 *.local
 
+# Environment variables — never commit secrets
+.env
+.env.local
+.env.production
+
+# Capacitor native build output
+android/
+ios/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

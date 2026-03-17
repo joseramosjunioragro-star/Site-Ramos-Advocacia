@@ -295,13 +295,16 @@ export default function DetalhesNegociacao() {
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Motivo</label>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Motivo *</label>
             <textarea
               className="input-field min-h-24 resize-none"
               placeholder="Ex: Problema logístico, aguardando recebimento de outra venda..."
               value={renegForm.motivo}
               onChange={(e) => setRenegForm({ ...renegForm, motivo: e.target.value })}
             />
+            {renegForm.motivo.trim().length === 0 && renegForm.novaData && (
+              <p className="text-xs text-red-500 mt-1">O motivo é obrigatório para o aditivo ter validade jurídica.</p>
+            )}
           </div>
           <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex gap-2">
             <CheckCircle size={14} className="text-green-600 flex-shrink-0 mt-0.5" />
@@ -309,7 +312,7 @@ export default function DetalhesNegociacao() {
           </div>
           <button
             onClick={handleRenegociacao}
-            disabled={!renegForm.novaData}
+            disabled={!renegForm.novaData || !renegForm.motivo.trim()}
             className="w-full btn-primary disabled:opacity-50"
           >
             Enviar Solicitação
