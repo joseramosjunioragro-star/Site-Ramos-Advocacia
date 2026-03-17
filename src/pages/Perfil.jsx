@@ -64,9 +64,18 @@ export default function Perfil() {
     ).join('').toUpperCase()
   );
 
-  const handleDenuncia = () => {
-    addDenuncia(denunciaForm);
-    setDenunciaEnviada(true);
+  const [denunciaLoading, setDenunciaLoading] = useState(false);
+
+  const handleDenuncia = async () => {
+    setDenunciaLoading(true);
+    try {
+      await addDenuncia(denunciaForm);
+      setDenunciaEnviada(true);
+    } catch (err) {
+      console.error('[TerraForte] addDenuncia error:', err);
+    } finally {
+      setDenunciaLoading(false);
+    }
   };
 
   const handleSelecionarPlano = (planoId) => {
@@ -293,22 +302,22 @@ export default function Perfil() {
             </div>
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Anexar Prova (foto/documento)</label>
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center">
+              <label className="block border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-red-400 transition-colors">
                 <Upload size={24} className="text-gray-400 mx-auto mb-2" />
                 <p className="text-sm text-gray-500">Toque para selecionar arquivo</p>
                 <p className="text-xs text-gray-400 mt-1">JPG, PNG, PDF até 10MB</p>
                 <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => setDenunciaForm({ ...denunciaForm, arquivo: e.target.files?.[0] })} />
-              </div>
+              </label>
               {denunciaForm.arquivo && (
                 <p className="text-xs text-green-600 mt-1">✓ {denunciaForm.arquivo.name}</p>
               )}
             </div>
             <button
               onClick={handleDenuncia}
-              disabled={!denunciaForm.usuario || !denunciaForm.tipo || !denunciaForm.descricao}
+              disabled={!denunciaForm.usuario || !denunciaForm.tipo || !denunciaForm.descricao || denunciaLoading}
               className="w-full btn-danger disabled:opacity-50"
             >
-              Registrar Denúncia com Prova Forense
+              {denunciaLoading ? 'Registrando...' : 'Registrar Denúncia com Prova Forense'}
             </button>
           </div>
         ) : (

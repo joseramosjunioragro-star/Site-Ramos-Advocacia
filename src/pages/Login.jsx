@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Eye, EyeOff, Leaf } from 'lucide-react';
 import useStore from '../store/useStore';
+import { isSupabaseEnabled } from '../lib/supabase';
+import { signIn, signUp } from '../services/auth.service';
+import { createProfile, getProfile } from '../services/usuarios.service';
 
 const ROLES = [
   { value: 'produtor', label: 'Produtor Rural', icon: '🌾' },
@@ -13,12 +16,14 @@ const ROLES = [
 export default function Login() {
   const navigate = useNavigate();
   const login = useStore((s) => s.login);
+  const initialize = useStore((s) => s.initialize);
   const [tab, setTab] = useState('login');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [form, setForm] = useState({
-    email: 'joao@terraforte.com.br',
-    password: '123456',
+    email: isSupabaseEnabled ? '' : 'joao@terraforte.com.br',
+    password: isSupabaseEnabled ? '' : '123456',
     name: '',
     cpf: '',
     whatsapp: '',
@@ -29,15 +34,63 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    login({ email: form.email, name: form.name || 'João Silva', role: form.role });
-    setLoading(false);
-    navigate('/');
+
+    if (!isSupabaseEnabled) {
+      // Offline / demo mode
+      await new Promise((r) => setTimeout(r, 1200));
+      login({ email: form.email, name: form.name || 'João Silva', role: form.role });
+      setLoading(false);
+      navigate('/');
+      return;
+    }
+
+    try {
+      if (tab === 'login') {
+        const { session } = await signIn(form.email, form.password);
+        await initialize(session);
+        navigate('/');
+      } else {
+        // Sign up → create auth user → create profile row
+        const { session, user: authUser } = await signUp(form.email, form.password);
+        if (authUser) {
+          await createProfile(authUser.id, {
+            name: form.name,
+            cpf: form.cpf,
+            email: form.email,
+            whatsapp: form.whatsapp,
+            city: form.city,
+            state: form.state,
+            role: form.role,
+          });
+        }
+        if (session) {
+          await initialize(session);
+          navigate('/');
+        } else {
+          // Supabase requires email confirmation
+          setError('Conta criada! Verifique seu e-mail para confirmar o cadastro antes de entrar.');
+        }
+      }
+    } catch (err) {
+      const msg = err?.message || 'Erro desconhecido';
+      if (msg.includes('Invalid login credentials')) {
+        setError('E-mail ou senha incorretos. Verifique e tente novamente.');
+      } else if (msg.includes('Email not confirmed')) {
+        setError('Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada.');
+      } else if (msg.includes('User already registered')) {
+        setError('Este e-mail já está cadastrado. Use a aba Entrar.');
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleGovBR = () => {
-    // Simulated Gov.BR OAuth
+    // Simulated Gov.BR OAuth2 — replace with real PKCE flow when available
     setLoading(true);
     setTimeout(() => {
       login({ name: 'José Ramos da Silva', cpf: '987.654.321-00', role: 'produtor' });
@@ -68,7 +121,7 @@ export default function Login() {
           {['login', 'cadastro'].map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => { setTab(t); setError(''); }}
               className={`flex-1 py-4 text-sm font-semibold transition-colors ${
                 tab === t
                   ? 'text-green-700 border-b-2 border-green-600'
@@ -81,6 +134,12 @@ export default function Login() {
         </div>
 
         <div className="p-6">
+          {error && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-medium">
+              {error}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {tab === 'cadastro' && (
               <>
@@ -169,6 +228,7 @@ export default function Login() {
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 required
+                autoComplete="email"
               />
             </div>
 
@@ -182,6 +242,8 @@ export default function Login() {
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   required
+                  autoComplete={tab === 'login' ? 'current-password' : 'new-password'}
+                  minLength={6}
                 />
                 <button
                   type="button"

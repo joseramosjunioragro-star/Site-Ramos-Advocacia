@@ -480,6 +480,7 @@ export default function NovaNegociacao() {
   const user = useStore((s) => s.user);
   const addNegociacao = useStore((s) => s.addNegociacao);
   const [negCriada, setNegCriada] = useState(null);
+  const [isCreating, setIsCreating] = useState(false);
 
   const tipoInfo = {
     padrao: { label: 'Compra e Venda', icon: '📦', color: 'from-green-600 to-green-700' },
@@ -489,9 +490,16 @@ export default function NovaNegociacao() {
 
   const info = tipoInfo[tipo] || tipoInfo.padrao;
 
-  const handleSubmit = (formData) => {
-    const neg = addNegociacao(formData);
-    setNegCriada(neg);
+  const handleSubmit = async (formData) => {
+    setIsCreating(true);
+    try {
+      const neg = await addNegociacao(formData);
+      setNegCriada(neg);
+    } catch (err) {
+      console.error('[TerraForte] Erro ao criar negociação:', err);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -514,6 +522,11 @@ export default function NovaNegociacao() {
         {negCriada ? (
           <div className="card">
             <SuccessScreen neg={negCriada} tipo={tipo} navigate={navigate} />
+          </div>
+        ) : isCreating ? (
+          <div className="card flex flex-col items-center justify-center py-16 gap-4">
+            <div className="w-10 h-10 border-4 border-green-200 border-t-green-600 rounded-full animate-spin" />
+            <p className="text-sm text-gray-500 font-medium">Gerando contrato...</p>
           </div>
         ) : (
           <div className="card">

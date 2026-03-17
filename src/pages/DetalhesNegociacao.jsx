@@ -33,6 +33,7 @@ export default function DetalhesNegociacao() {
   const [renegForm, setRenegForm] = useState({ novaData: '', motivo: '' });
   const [pacoteForense, setPacoteForense] = useState(null);
   const [baixaConfirmada, setBaixaConfirmada] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   if (!neg) {
     return (
@@ -48,32 +49,63 @@ export default function DetalhesNegociacao() {
   const taxa = calcularTaxa(neg.valor, user.plan);
   const isVencida = ['vencida', 'notificada', 'em_execucao'].includes(neg.status);
 
-  const handleRenegociacao = () => {
-    if (!renegForm.novaData) return;
-    addAditivo(neg.id, { novaData: renegForm.novaData, motivo: renegForm.motivo, solicitante: user.name });
-    setShowRenegModal(false);
-    setRenegForm({ novaData: '', motivo: '' });
+  const handleRenegociacao = async () => {
+    if (!renegForm.novaData || submitting) return;
+    setSubmitting(true);
+    try {
+      await addAditivo(neg.id, { novaData: renegForm.novaData, motivo: renegForm.motivo, solicitante: user.name });
+      setShowRenegModal(false);
+      setRenegForm({ novaData: '', motivo: '' });
+    } catch (err) {
+      console.error('[TerraForte] addAditivo error:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleExecutar = () => {
-    const hash = gerarHashSHA256Simulado(neg.id + neg.timestampAssinatura);
-    setPacoteForense({
-      hash,
-      arquivos: ['Contrato_' + neg.id + '.pdf', 'Historico_Aditivos.pdf', 'Log_Timestamps.json', 'IP_Evidence.txt'],
-      timestamp: new Date().toUTCString(),
-    });
-    executarDivida(neg.id);
-    setShowExecutarModal(false);
-    setShowForenseModal(true);
+  const handleExecutar = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const hash = gerarHashSHA256Simulado(neg.id + neg.timestampAssinatura);
+      setPacoteForense({
+        hash,
+        arquivos: ['Contrato_' + neg.id + '.pdf', 'Historico_Aditivos.pdf', 'Log_Timestamps.json', 'IP_Evidence.txt'],
+        timestamp: new Date().toUTCString(),
+      });
+      await executarDivida(neg.id);
+      setShowExecutarModal(false);
+      setShowForenseModal(true);
+    } catch (err) {
+      console.error('[TerraForte] executarDivida error:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleNotificar = () => {
-    notificarDevedor(neg.id);
+  const handleNotificar = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await notificarDevedor(neg.id);
+    } catch (err) {
+      console.error('[TerraForte] notificarDevedor error:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleBaixa = () => {
-    darBaixa(neg.id);
-    setBaixaConfirmada(true);
+  const handleBaixa = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await darBaixa(neg.id);
+      setBaixaConfirmada(true);
+    } catch (err) {
+      console.error('[TerraForte] darBaixa error:', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const pendingAditivos = neg.aditivos?.filter((a) => a.status === 'pendente') || [];
@@ -117,8 +149,14 @@ export default function DetalhesNegociacao() {
                 <p className="text-xs text-gray-700 mb-1"><strong>Nova data:</strong> {formatDate(a.novaData)}</p>
                 <p className="text-xs text-gray-600 mb-2"><strong>Motivo:</strong> {a.motivo}</p>
                 <button
-                  onClick={() => aceitarAditivo(neg.id, a.id)}
-                  className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
+                  onClick={async () => {
+                    setSubmitting(true);
+                    try { await aceitarAditivo(neg.id, a.id); }
+                    catch (err) { console.error('[TerraForte] aceitarAditivo error:', err); }
+                    finally { setSubmitting(false); }
+                  }}
+                  disabled={submitting}
+                  className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60"
                 >
                   <Check size={14} /> Aceitar Prazo — Sem Penalidade no Score
                 </button>
@@ -243,9 +281,10 @@ export default function DetalhesNegociacao() {
           {neg.status === 'vencida' && (
             <button
               onClick={handleNotificar}
-              className="w-full bg-orange-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg"
+              disabled={submitting}
+              className="w-full bg-orange-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg disabled:opacity-60"
             >
-              <AlertCircle size={18} /> Assinar e Notificar Devedor
+              <AlertCircle size={18} /> {submitting ? 'Enviando...' : 'Assinar e Notificar Devedor'}
             </button>
           )}
 
@@ -253,7 +292,8 @@ export default function DetalhesNegociacao() {
           {(neg.status === 'notificada') && (
             <button
               onClick={() => setShowExecutarModal(true)}
-              className="w-full btn-danger py-4 flex items-center justify-center gap-2 shadow-lg"
+              disabled={submitting}
+              className="w-full btn-danger py-4 flex items-center justify-center gap-2 shadow-lg disabled:opacity-60"
             >
               <Gavel size={18} /> Executar Dívida na Justiça
             </button>

@@ -1,4 +1,13 @@
 import { create } from 'zustand';
+import { isSupabaseEnabled } from '../lib/supabase';
+import { signOut } from '../services/auth.service';
+import * as negService from '../services/negociacoes.service';
+import * as aditivoService from '../services/aditivos.service';
+import * as notifService from '../services/notificacoes.service';
+import * as denunciaService from '../services/denuncias.service';
+import * as usuariosService from '../services/usuarios.service';
+
+// ─── Mock data (offline / demo mode) ────────────────────────────────────────
 
 const mockUser = {
   id: 'user-001',
@@ -88,138 +97,288 @@ const mockNegociacoes = [
   },
 ];
 
-const mockDenuncias = [];
+// ─── Store ───────────────────────────────────────────────────────────────────
 
-const useStore = create((set) => ({
-  // Auth
-  isAuthenticated: true,
-  user: mockUser,
+const useStore = create((set, get) => ({
+  // ── State ──────────────────────────────────────────────────────────────────
+  isAuthenticated: !isSupabaseEnabled, // auto-authenticated in offline mode
+  isInitialized: false,
+  isLoading: false,
+  user: isSupabaseEnabled ? null : mockUser,
+  negociacoes: isSupabaseEnabled ? [] : mockNegociacoes,
+  denuncias: [],
+  notifications: isSupabaseEnabled
+    ? []
+    : [
+        { id: 'n1', message: 'Sua negociação com Distribuidora Fresca vence em 45 dias', type: 'info', read: false },
+        { id: 'n2', message: 'Negociação com Maria Santos está VENCIDA há 5 dias', type: 'danger', read: false },
+      ],
 
-  // Negociações
-  negociacoes: mockNegociacoes,
-  denuncias: mockDenuncias,
+  // ── Init ───────────────────────────────────────────────────────────────────
+  initialize: async (session) => {
+    if (!isSupabaseEnabled) {
+      set({ isInitialized: true });
+      return;
+    }
 
-  // Notifications
-  notifications: [
-    { id: 'n1', message: 'Sua negociação com Distribuidora Fresca vence em 45 dias', type: 'info', read: false },
-    { id: 'n2', message: 'Negociação com Maria Santos está VENCIDA há 5 dias', type: 'danger', read: false },
-  ],
+    if (!session) {
+      set({ isInitialized: true, isAuthenticated: false, user: null });
+      return;
+    }
 
-  login: (userData) => set({ isAuthenticated: true, user: { ...mockUser, ...userData } }),
-  logout: () => set({ isAuthenticated: false, user: null }),
+    set({ isLoading: true });
+    try {
+      const [profile, negs, notifs] = await Promise.all([
+        usuariosService.getProfile(session.user.id),
+        negService.listNegociacoes(session.user.id),
+        notifService.listNotificacoes(session.user.id),
+      ]);
 
-  addNegociacao: (neg) => {
-    const newNeg = {
-      ...neg,
-      id: `neg-${Date.now()}`,
-      dataCriacao: new Date().toISOString(),
-      ipAssinatura: '177.92.' + Math.floor(Math.random() * 255) + '.' + Math.floor(Math.random() * 255),
-      timestampAssinatura: new Date().toISOString(),
-      aditivos: [],
-    };
-    set((state) => ({
-      negociacoes: [newNeg, ...state.negociacoes],
-      user: {
-        ...state.user,
-        freeTrials: state.user.freeTrials > 0 ? state.user.freeTrials - 1 : 0,
-        monthlyVolume: state.user.monthlyVolume + (neg.valor || 0),
-      },
-    }));
-    return newNeg;
+      set({
+        isAuthenticated: true,
+        user: profile || { id: session.user.id, email: session.user.email, role: 'produtor', freeTrials: 3, plan: 'gratuito', reputation: 5.0, monthlyVolume: 0 },
+        negociacoes: negs,
+        notifications: notifs,
+        isInitialized: true,
+        isLoading: false,
+      });
+    } catch (err) {
+      console.error('[TerraForte] initialize error:', err);
+      set({ isInitialized: true, isLoading: false });
+    }
   },
 
-  updateNegociacao: (id, updates) => set((state) => ({
-    negociacoes: state.negociacoes.map((n) => n.id === id ? { ...n, ...updates } : n),
+  // ── Auth ───────────────────────────────────────────────────────────────────
+  login: (userData) => set({ isAuthenticated: true, user: { ...mockUser, ...userData } }),
+
+  logout: async () => {
+    if (isSupabaseEnabled) {
+      try { await signOut(); } catch (_) { /* ignore */ }
+    }
+    set({
+      isAuthenticated: false,
+      user: null,
+      negociacoes: [],
+      notifications: [],
+      denuncias: [],
+      isInitialized: isSupabaseEnabled ? false : true,
+    });
+  },
+
+  setUser: (user) => set({ user }),
+
+  // ── Negociações ────────────────────────────────────────────────────────────
+  addNegociacao: async (neg) => {
+    const state = get();
+
+    if (!isSupabaseEnabled) {
+      const newNeg = {
+        ...neg,
+        id: `neg-${Date.now()}`,
+        dataCriacao: new Date().toISOString(),
+        ipAssinatura: '177.92.' + Math.floor(Math.random() * 255) + '.' + Math.floor(Math.random() * 255),
+        timestampAssinatura: new Date().toISOString(),
+        aditivos: [],
+      };
+      set((s) => ({
+        negociacoes: [newNeg, ...s.negociacoes],
+        user: {
+          ...s.user,
+          freeTrials: s.user.freeTrials > 0 ? s.user.freeTrials - 1 : 0,
+          monthlyVolume: s.user.monthlyVolume + (neg.valor || 0),
+        },
+      }));
+      return newNeg;
+    }
+
+    const created = await negService.createNegociacao(neg, state.user.id);
+    set((s) => ({
+      negociacoes: [created, ...s.negociacoes],
+      user: {
+        ...s.user,
+        freeTrials: Math.max(0, (s.user.freeTrials || 0) - 1),
+        monthlyVolume: (s.user.monthlyVolume || 0) + (neg.valor || 0),
+      },
+    }));
+    return created;
+  },
+
+  updateNegociacao: (id, updates) => set((s) => ({
+    negociacoes: s.negociacoes.map((n) => n.id === id ? { ...n, ...updates } : n),
   })),
 
-  addAditivo: (negId, aditivo) => set((state) => ({
-    negociacoes: state.negociacoes.map((n) =>
-      n.id === negId
-        ? {
-            ...n,
-            dataVencimento: aditivo.novaData,
-            aditivos: [...n.aditivos, {
-              ...aditivo,
-              id: `adi-${Date.now()}`,
-              dataCriacao: new Date().toISOString(),
-              status: 'pendente',
-            }],
-          }
-        : n
-    ),
-  })),
+  // ── Aditivos ───────────────────────────────────────────────────────────────
+  addAditivo: async (negId, aditivo) => {
+    const state = get();
 
-  // Clamp reputation between 1.0 and 5.0
-  _adjustReputation: (current, delta) => Math.min(5.0, Math.max(1.0, +(current + delta).toFixed(1))),
+    if (!isSupabaseEnabled) {
+      set((s) => ({
+        negociacoes: s.negociacoes.map((n) =>
+          n.id === negId
+            ? {
+                ...n,
+                dataVencimento: aditivo.novaData,
+                aditivos: [...n.aditivos, {
+                  ...aditivo,
+                  id: `adi-${Date.now()}`,
+                  dataCriacao: new Date().toISOString(),
+                  status: 'pendente',
+                }],
+              }
+            : n
+        ),
+      }));
+      return;
+    }
 
-  aceitarAditivo: (negId, aditivoId) => set((state) => ({
-    // Score is NOT penalized when an aditivo is mutually accepted — only update status
-    negociacoes: state.negociacoes.map((n) =>
-      n.id === negId
-        ? {
-            ...n,
-            // Also update the contract due date to the accepted new date
-            dataVencimento: n.aditivos.find((a) => a.id === aditivoId)?.novaData || n.dataVencimento,
-            status: 'ativa',
-            aditivos: n.aditivos.map((a) =>
-              a.id === aditivoId ? { ...a, status: 'aceito', aceitoEm: new Date().toISOString() } : a
-            ),
-          }
-        : n
-    ),
-  })),
-
-  executarDivida: (negId) => set((state) => {
-    // Penalizar reputação do credor logado pelo não recebimento (−0.5)
-    const newReputation = Math.min(5.0, Math.max(1.0, +(state.user.reputation - 0.5).toFixed(1)));
-    return {
-      negociacoes: state.negociacoes.map((n) =>
-        n.id === negId ? { ...n, status: 'em_execucao' } : n
+    const created = await aditivoService.createAditivo(negId, state.user.id, aditivo);
+    set((s) => ({
+      negociacoes: s.negociacoes.map((n) =>
+        n.id === negId
+          ? {
+              ...n,
+              dataVencimento: aditivo.novaData,
+              aditivos: [...n.aditivos, {
+                id: created.id,
+                novaData: created.nova_data_vencimento,
+                motivo: created.motivo,
+                status: created.status,
+                dataCriacao: created.criado_em,
+              }],
+            }
+          : n
       ),
-      // In production this would target the debtor's record via Supabase RPC
-      user: { ...state.user, reputation: newReputation },
-    };
-  }),
+    }));
+  },
 
-  notificarDevedor: (negId) => set((state) => ({
-    negociacoes: state.negociacoes.map((n) =>
-      n.id === negId ? { ...n, status: 'notificada' } : n
-    ),
-    // Penalizar score do usuário logado em −0.5 ao notificar devedor
-    user: {
-      ...state.user,
-      reputation: Math.min(5.0, Math.max(1.0, +(state.user.reputation - 0.5).toFixed(1))),
-    },
-  })),
+  aceitarAditivo: async (negId, aditivoId) => {
+    const state = get();
+    const neg = state.negociacoes.find((n) => n.id === negId);
+    const aditivo = neg?.aditivos.find((a) => a.id === aditivoId);
+    const novaData = aditivo?.novaData || neg?.dataVencimento;
 
-  darBaixa: (negId) => set((state) => ({
-    negociacoes: state.negociacoes.map((n) =>
-      n.id === negId ? { ...n, status: 'concluida' } : n
-    ),
-  })),
+    if (!isSupabaseEnabled) {
+      set((s) => ({
+        negociacoes: s.negociacoes.map((n) =>
+          n.id === negId
+            ? {
+                ...n,
+                dataVencimento: novaData,
+                status: 'ativa',
+                aditivos: n.aditivos.map((a) =>
+                  a.id === aditivoId ? { ...a, status: 'aceito', aceitoEm: new Date().toISOString() } : a
+                ),
+              }
+            : n
+        ),
+      }));
+      return;
+    }
 
-  addDenuncia: (denuncia) => set((state) => ({
-    denuncias: [{
-      ...denuncia,
-      id: `den-${Date.now()}`,
-      dataCriacao: new Date().toISOString(),
-      ip: '177.92.' + Math.floor(Math.random() * 255) + '.' + Math.floor(Math.random() * 255),
-      timestampUTC: new Date().toUTCString(),
-      hash: gerarHashSHA256(denuncia.descricao + Date.now()),
-    }, ...state.denuncias],
-  })),
+    await aditivoService.acceptAditivo(aditivoId, negId, novaData);
+    set((s) => ({
+      negociacoes: s.negociacoes.map((n) =>
+        n.id === negId
+          ? {
+              ...n,
+              dataVencimento: novaData,
+              status: 'ativa',
+              aditivos: n.aditivos.map((a) =>
+                a.id === aditivoId ? { ...a, status: 'aceito', aceitoEm: new Date().toISOString() } : a
+              ),
+            }
+          : n
+      ),
+    }));
+  },
 
-  markNotificationRead: (id) => set((state) => ({
-    notifications: state.notifications.map((n) => n.id === id ? { ...n, read: true } : n),
-  })),
+  // ── Debt actions ───────────────────────────────────────────────────────────
+  notificarDevedor: async (negId) => {
+    if (isSupabaseEnabled) {
+      await negService.updateNegociacaoStatus(negId, 'notificada');
+    }
+    set((s) => ({
+      negociacoes: s.negociacoes.map((n) => n.id === negId ? { ...n, status: 'notificada' } : n),
+      user: {
+        ...s.user,
+        reputation: Math.min(5.0, Math.max(1.0, +((s.user?.reputation || 5.0) - 0.5).toFixed(1))),
+      },
+    }));
+  },
 
-  clearNotifications: () => set((state) => ({
-    notifications: state.notifications.map((n) => ({ ...n, read: true })),
-  })),
+  executarDivida: async (negId) => {
+    if (isSupabaseEnabled) {
+      await negService.updateNegociacaoStatus(negId, 'em_execucao');
+    }
+    set((s) => ({
+      negociacoes: s.negociacoes.map((n) => n.id === negId ? { ...n, status: 'em_execucao' } : n),
+      user: {
+        ...s.user,
+        reputation: Math.min(5.0, Math.max(1.0, +((s.user?.reputation || 5.0) - 0.5).toFixed(1))),
+      },
+    }));
+  },
+
+  darBaixa: async (negId) => {
+    if (isSupabaseEnabled) {
+      await negService.updateNegociacaoStatus(negId, 'concluida');
+    }
+    set((s) => ({
+      negociacoes: s.negociacoes.map((n) => n.id === negId ? { ...n, status: 'concluida' } : n),
+    }));
+  },
+
+  // ── Denúncias ──────────────────────────────────────────────────────────────
+  addDenuncia: async (denuncia) => {
+    const state = get();
+
+    if (!isSupabaseEnabled) {
+      set((s) => ({
+        denuncias: [{
+          ...denuncia,
+          id: `den-${Date.now()}`,
+          dataCriacao: new Date().toISOString(),
+          ip: '177.92.' + Math.floor(Math.random() * 255) + '.' + Math.floor(Math.random() * 255),
+          timestampUTC: new Date().toUTCString(),
+          hash: gerarHashSHA256(denuncia.descricao + Date.now()),
+        }, ...s.denuncias],
+      }));
+      return;
+    }
+
+    await denunciaService.createDenuncia(state.user.id, denuncia);
+    set((s) => ({
+      denuncias: [{
+        ...denuncia,
+        id: `den-${Date.now()}`,
+        dataCriacao: new Date().toISOString(),
+        timestampUTC: new Date().toUTCString(),
+      }, ...s.denuncias],
+    }));
+  },
+
+  // ── Notifications ──────────────────────────────────────────────────────────
+  markNotificationRead: async (id) => {
+    if (isSupabaseEnabled) {
+      await notifService.markRead(id);
+    }
+    set((s) => ({
+      notifications: s.notifications.map((n) => n.id === id ? { ...n, read: true } : n),
+    }));
+  },
+
+  clearNotifications: async () => {
+    const state = get();
+    if (isSupabaseEnabled && state.user?.id) {
+      await notifService.markAllRead(state.user.id);
+    }
+    set((s) => ({
+      notifications: s.notifications.map((n) => ({ ...n, read: true })),
+    }));
+  },
 }));
 
 function gerarHashSHA256(str) {
-  // Simulated deterministic hash for demo
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);

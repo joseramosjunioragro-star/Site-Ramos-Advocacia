@@ -176,6 +176,9 @@ ALTER TABLE negociacoes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE aditivos_contratuais ENABLE ROW LEVEL SECURITY;
 ALTER TABLE provas_forenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE denuncias ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cobrancas_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pagamentos_plataforma ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notificacoes ENABLE ROW LEVEL SECURITY;
 
 -- Usuários só veem seus próprios dados
 CREATE POLICY "usuarios_own" ON usuarios FOR ALL USING (auth.uid() = id);
@@ -196,6 +199,28 @@ USING (
     AND (n.produtor_id = auth.uid() OR n.comprador_id = auth.uid())
   )
 );
+
+-- Provas forenses visíveis apenas pelo dono
+CREATE POLICY "provas_own" ON provas_forenses FOR ALL USING (auth.uid() = usuario_id);
+
+-- Denúncias visíveis apenas pelo denunciante
+CREATE POLICY "denuncias_own" ON denuncias FOR ALL USING (auth.uid() = denunciante_id);
+
+-- Cobranças visíveis pelos participantes da negociação
+CREATE POLICY "cobrancas_negociacao" ON cobrancas_log FOR ALL
+USING (
+  EXISTS (
+    SELECT 1 FROM negociacoes n
+    WHERE n.id = negociacao_id
+    AND (n.produtor_id = auth.uid() OR n.comprador_id = auth.uid())
+  )
+);
+
+-- Pagamentos visíveis pelo usuário dono
+CREATE POLICY "pagamentos_own" ON pagamentos_plataforma FOR ALL USING (auth.uid() = usuario_id);
+
+-- Notificações visíveis apenas pelo destinatário
+CREATE POLICY "notificacoes_own" ON notificacoes FOR ALL USING (auth.uid() = usuario_id);
 
 -- ============================================================
 -- FUNÇÕES E TRIGGERS

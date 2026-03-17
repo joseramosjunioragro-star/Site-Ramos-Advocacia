@@ -31,7 +31,7 @@ export default function Provas() {
       timestampUTC: timestamp,
     };
 
-    addDenuncia(prova);
+    await addDenuncia(prova);
     setResultado(prova);
     setLoading(false);
   };
