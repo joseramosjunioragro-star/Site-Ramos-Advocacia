@@ -58,6 +58,12 @@ export default function Perfil() {
   const concluidas = negociacoes.filter((n) => n.status === 'concluida').length;
   const totalVolume = negociacoes.reduce((acc, n) => acc + (n.valor || 0), 0);
 
+  const [denunciaHash] = useState(() =>
+    Array.from({ length: 64 }, () =>
+      Math.floor(Math.random() * 16).toString(16)
+    ).join('').toUpperCase()
+  );
+
   const handleDenuncia = () => {
     addDenuncia(denunciaForm);
     setDenunciaEnviada(true);
@@ -314,7 +320,7 @@ export default function Perfil() {
             <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-left">
               <p className="text-xs font-bold text-purple-800 mb-2">Hash Blockchain (EOS) — ISO 27037</p>
               <p className="text-xs font-mono text-purple-600 break-all">
-                {Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('').toUpperCase()}
+                {denunciaHash}
               </p>
             </div>
             <p className="text-xs text-gray-500">Metadados coletados: IP do navegador, Data/Hora UTC, fingerprint do dispositivo. Registrado em blockchain simulado para validade pericial.</p>

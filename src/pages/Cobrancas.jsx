@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle, CheckCircle, Clock, DollarSign, Gavel, ChevronRight, TrendingDown } from 'lucide-react';
 import useStore from '../store/useStore';
-import { formatCurrency, formatDate, diasParaVencer } from '../utils/helpers';
+import { formatCurrency, diasParaVencer } from '../utils/helpers';
 
 export default function Cobrancas() {
   const navigate = useNavigate();

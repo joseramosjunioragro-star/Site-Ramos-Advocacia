@@ -219,7 +219,7 @@ function FormPadrao({ onSubmit, user }) {
 }
 
 // Venda Antecipada (Futuro)
-function FormFuturo({ onSubmit, user }) {
+function FormFuturo({ onSubmit }) {
   const [form, setForm] = useState({
     produto: '',
     variedade: '',

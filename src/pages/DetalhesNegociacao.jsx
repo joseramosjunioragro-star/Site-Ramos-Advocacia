@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Shield, AlertCircle, CheckCircle, Clock, FileText,
-  Calendar, MapPin, User, Phone, DollarSign, Gavel, Share2,
-  RefreshCw, Package, X, Check
+  ArrowLeft, Shield, AlertCircle, CheckCircle, FileText,
+  Calendar, MapPin, User, Phone, DollarSign, Gavel,
+  RefreshCw, Check
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import Modal from '../components/Modal';
 import {
-  formatCurrency, formatDate, formatDateTime, getStatusColor,
+  formatCurrency, formatDate, getStatusColor,
   getStatusLabel, getTipoLabel, diasParaVencer, calcularTaxa, gerarHashSHA256Simulado
 } from '../utils/helpers';
 

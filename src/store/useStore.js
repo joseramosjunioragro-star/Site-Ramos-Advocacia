@@ -90,7 +90,7 @@ const mockNegociacoes = [
 
 const mockDenuncias = [];
 
-const useStore = create((set, get) => ({
+const useStore = create((set) => ({
   // Auth
   isAuthenticated: true,
   user: mockUser,

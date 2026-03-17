@@ -44,18 +44,19 @@ export default function Layout({ children }) {
 
       {/* Bottom Nav */}
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-gray-100 flex z-40 shadow-2xl">
-        {navItems.map(({ path, icon: Icon, label }) => {
-          const active = location.pathname === path;
+        {navItems.map((item) => {
+          const NavIcon = item.icon;
+          const active = location.pathname === item.path;
           return (
             <Link
-              key={path}
-              to={path}
+              key={item.path}
+              to={item.path}
               className={`flex-1 flex flex-col items-center py-3 gap-0.5 transition-colors ${
                 active ? 'text-green-700' : 'text-gray-400'
               }`}
             >
-              <Icon size={22} strokeWidth={active ? 2.5 : 1.8} />
-              <span className="text-xs font-medium">{label}</span>
+              <NavIcon size={22} strokeWidth={active ? 2.5 : 1.8} />
+              <span className="text-xs font-medium">{item.label}</span>
               {active && <span className="w-1 h-1 bg-green-600 rounded-full" />}
             </Link>
           );
