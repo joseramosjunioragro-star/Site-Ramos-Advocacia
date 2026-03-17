@@ -169,6 +169,56 @@ CREATE TABLE IF NOT EXISTS notificacoes (
 );
 
 -- ============================================================
+-- TABELA: perdas_safra
+-- Registros de perda extraordinária de safra (venda_antecipada)
+-- Exclui inadimplemento ordinário — requer evidências comprovadas
+-- ============================================================
+CREATE TABLE IF NOT EXISTS perdas_safra (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  negociacao_id UUID NOT NULL REFERENCES negociacoes(id),
+  produtor_id UUID NOT NULL REFERENCES usuarios(id),
+
+  -- Tipo de evento extraordinário
+  tipo_evento TEXT NOT NULL CHECK (tipo_evento IN (
+    'chuvas_excessivas', 'seca', 'geada', 'granizo',
+    'fitossanitario', 'inundacao', 'outro'
+  )),
+
+  -- Datas relevantes (conforme requisito: notificação em 5 dias úteis)
+  data_ocorrencia DATE NOT NULL,
+  data_notificacao TIMESTAMPTZ DEFAULT NOW(),
+
+  -- Descrição detalhada do evento
+  descricao TEXT NOT NULL,
+
+  -- Evidências digitais (ISO 27037)
+  hash_evidencias TEXT,       -- SHA-256 do arquivo de prova
+  arquivo_url TEXT,           -- Supabase Storage path
+
+  -- Ciclo de revisão: em_apuracao → aprovado | rejeitado
+  status_revisao TEXT DEFAULT 'em_apuracao' CHECK (
+    status_revisao IN ('em_apuracao', 'aprovado', 'rejeitado')
+  ),
+
+  -- Campos preenchidos na decisão
+  valor_arras_devolvido DECIMAL(12,2),   -- Arras a devolver se aprovado
+  notas_revisao TEXT,                     -- Justificativa da decisão
+  decisao_em TIMESTAMPTZ,                -- Data/hora da decisão
+
+  -- Registro forense
+  ip_registro INET,
+  criado_em TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Alterar constraint de status em negociacoes para incluir o novo status
+ALTER TABLE negociacoes DROP CONSTRAINT IF EXISTS negociacoes_status_check;
+ALTER TABLE negociacoes ADD CONSTRAINT negociacoes_status_check
+  CHECK (status IN (
+    'pendente', 'ativa', 'vencida', 'notificada',
+    'em_execucao', 'concluida', 'perda_safra_em_apuracao'
+  ));
+
+-- ============================================================
 -- ROW LEVEL SECURITY (RLS)
 -- ============================================================
 ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
@@ -179,6 +229,7 @@ ALTER TABLE denuncias ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cobrancas_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pagamentos_plataforma ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notificacoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE perdas_safra ENABLE ROW LEVEL SECURITY;
 
 -- Usuários só veem seus próprios dados
 CREATE POLICY "usuarios_own" ON usuarios FOR ALL USING (auth.uid() = id);
@@ -221,6 +272,10 @@ CREATE POLICY "pagamentos_own" ON pagamentos_plataforma FOR ALL USING (auth.uid(
 
 -- Notificações visíveis apenas pelo destinatário
 CREATE POLICY "notificacoes_own" ON notificacoes FOR ALL USING (auth.uid() = usuario_id);
+
+-- Perdas de safra visíveis pelo produtor da negociação
+CREATE POLICY "perdas_safra_own" ON perdas_safra FOR ALL
+USING (auth.uid() = produtor_id);
 
 -- ============================================================
 -- FUNÇÕES E TRIGGERS
@@ -277,6 +332,9 @@ CREATE INDEX idx_notificacoes_usuario ON notificacoes(usuario_id);
 CREATE INDEX idx_notificacoes_lida ON notificacoes(usuario_id, lida);
 CREATE INDEX idx_cobrancas_negociacao ON cobrancas_log(negociacao_id);
 CREATE INDEX idx_pagamentos_usuario ON pagamentos_plataforma(usuario_id);
+CREATE INDEX idx_perdas_negociacao ON perdas_safra(negociacao_id);
+CREATE INDEX idx_perdas_produtor ON perdas_safra(produtor_id);
+CREATE INDEX idx_perdas_status ON perdas_safra(status_revisao);
 
 -- ============================================================
 -- SUPABASE STORAGE — Bucket para Provas Forenses

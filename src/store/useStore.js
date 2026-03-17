@@ -6,6 +6,7 @@ import * as aditivoService from '../services/aditivos.service';
 import * as notifService from '../services/notificacoes.service';
 import * as denunciaService from '../services/denuncias.service';
 import * as usuariosService from '../services/usuarios.service';
+import * as perdasService from '../services/perdas.service';
 
 // ─── Mock data (offline / demo mode) ────────────────────────────────────────
 
@@ -130,6 +131,7 @@ const useStore = create((set, get) => {
     user: isSupabaseEnabled ? null : mockUser,
     negociacoes: isSupabaseEnabled ? [] : mockNegociacoes,
     denuncias: [],
+    perdas: [],
     notifications: isSupabaseEnabled
       ? []
       : [
@@ -208,6 +210,7 @@ const useStore = create((set, get) => {
         negociacoes: [],
         notifications: [],
         denuncias: [],
+        perdas: [],
         isInitialized: isSupabaseEnabled ? false : true,
       });
     },
@@ -403,6 +406,75 @@ const useStore = create((set, get) => {
         negociacoes: s.negociacoes.map((n) => n.id === negId ? { ...n, status: 'concluida' } : n),
       }));
       pushNotif('success', `Contrato ${neg?.produto || negId} encerrado com sucesso.`, negId);
+    },
+
+    // ── Perda de Safra ────────────────────────────────────────────────────────
+    /**
+     * Register a proven crop-loss event for a venda_antecipada contract.
+     * Sets status to 'perda_safra_em_apuracao' and notifies both parties.
+     * Normal default rules do NOT apply while status is em_apuracao.
+     */
+    comunicarPerdaSafra: async (negId, dados) => {
+      const state = get();
+      const neg = state.negociacoes.find((n) => n.id === negId);
+
+      const perdaLocal = {
+        id: `perda-${Date.now()}`,
+        negociacaoId: negId,
+        tipoEvento: dados.tipoEvento,
+        dataOcorrencia: dados.dataOcorrencia,
+        descricao: dados.descricao,
+        hashEvidencias: dados.hashEvidencias || null,
+        arquivoUrl: dados.arquivoUrl || null,
+        statusRevisao: 'em_apuracao',
+        dataCriacao: new Date().toISOString(),
+      };
+
+      if (!isSupabaseEnabled) {
+        set((s) => ({
+          negociacoes: s.negociacoes.map((n) =>
+            n.id === negId ? { ...n, status: 'perda_safra_em_apuracao' } : n
+          ),
+          perdas: [perdaLocal, ...s.perdas],
+        }));
+        pushNotif(
+          'warning',
+          `Perda de safra comunicada para ${neg?.produto || negId} — aguardando apuração.`,
+          negId
+        );
+        return perdaLocal;
+      }
+
+      // Persist to DB
+      const row = await perdasService.createPerdaSafra(negId, state.user.id, dados);
+      await negService.updateNegociacaoStatus(negId, 'perda_safra_em_apuracao');
+
+      set((s) => ({
+        negociacoes: s.negociacoes.map((n) =>
+          n.id === negId ? { ...n, status: 'perda_safra_em_apuracao' } : n
+        ),
+        perdas: [
+          {
+            id: row.id,
+            negociacaoId: row.negociacao_id,
+            tipoEvento: row.tipo_evento,
+            dataOcorrencia: row.data_ocorrencia,
+            descricao: row.descricao,
+            hashEvidencias: row.hash_evidencias,
+            arquivoUrl: row.arquivo_url,
+            statusRevisao: row.status_revisao,
+            dataCriacao: row.criado_em,
+          },
+          ...s.perdas,
+        ],
+      }));
+
+      pushNotif(
+        'warning',
+        `Perda de safra comunicada para ${neg?.produto || negId} — aguardando apuração.`,
+        negId
+      );
+      return row;
     },
 
     // ── Denúncias ─────────────────────────────────────────────────────────────

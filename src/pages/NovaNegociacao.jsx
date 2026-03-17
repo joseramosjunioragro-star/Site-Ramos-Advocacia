@@ -289,11 +289,20 @@ function FormFuturo({ onSubmit }) {
         <input className="input-field" placeholder="(11) 99999-9999" value={form.compradorWhatsapp} onChange={(e) => setForm({ ...form, compradorWhatsapp: e.target.value })} />
       </div>
 
-      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-        <p className="text-xs font-bold text-gray-700 mb-1">Cláusula de Imprevisibilidade (Bloqueada)</p>
-        <p className="text-xs text-gray-500 leading-relaxed italic">
-          "As partes afastam expressamente a teoria da imprevisibilidade (CC, art. 478) para eventos climáticos e variações de preço de mercado, conforme jurisprudência consolidada do STJ."
-        </p>
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+        <p className="text-xs font-bold text-blue-900">Cláusulas Contratuais — Venda Antecipada</p>
+        <div>
+          <p className="text-xs font-semibold text-blue-800 mb-0.5">Cláusula 2.2 — Imprevisibilidade Afastada</p>
+          <p className="text-xs text-blue-700 leading-relaxed italic">
+            "As partes afastam expressamente a teoria da imprevisibilidade (CC, art. 478) para eventos climáticos ordinários, variações de preço e condições de mercado, conforme jurisprudência consolidada do STJ."
+          </p>
+        </div>
+        <div className="border-t border-blue-200 pt-3">
+          <p className="text-xs font-semibold text-blue-800 mb-0.5">Cláusula 2.3 — Perda Extraordinária de Safra</p>
+          <p className="text-xs text-blue-700 leading-relaxed italic">
+            "Em caso de impossibilidade comprovada por perda extraordinária (chuvas excessivas, geada, granizo, evento fitossanitário ou força maior), o Produtor deverá notificar o Comprador pela Plataforma em até 5 dias úteis, com evidências técnicas. O sistema suspenderá as penalidades de inadimplemento durante a apuração. Perda comprovada: devolução das arras, sem demais penalidades. Evidências insuficientes: regras ordinárias de inadimplemento aplicam-se integralmente. Esta exceção não se aplica a entregas parcialmente realizáveis."
+          </p>
+        </div>
       </div>
 
       <button
@@ -460,9 +469,14 @@ function SuccessScreen({ neg, tipo, navigate }) {
               "As partes reconhecem a validade jurídica plena desta assinatura eletrônica avançada, nos termos do art. 784, § 4º do Código de Processo Civil, dispensando a necessidade de testemunhas. Este instrumento constitui Título Executivo Extrajudicial nos termos da Lei nº 14.620/2023, podendo ser objeto de execução direta perante o Poder Judiciário."
             </p>
             {tipo === 'futuro' && (
-              <p className="text-blue-700 leading-relaxed mt-2">
-                "As partes afastam expressamente a teoria da imprevisibilidade (CC, art. 478) para eventos climáticos e variações de preço de mercado, conforme jurisprudência consolidada do Superior Tribunal de Justiça."
-              </p>
+              <>
+                <p className="text-blue-700 leading-relaxed mt-2">
+                  "CLÁUSULA 2.2 — As partes afastam expressamente a teoria da imprevisibilidade (CC, art. 478) para eventos climáticos ordinários, variações de preço e condições de mercado, conforme jurisprudência consolidada do STJ."
+                </p>
+                <p className="text-blue-700 leading-relaxed mt-2">
+                  "CLÁUSULA 2.3 — PERDA EXTRAORDINÁRIA DE SAFRA: Em caso de impossibilidade comprovada por perda extraordinária, o Produtor notificará o Comprador pela Plataforma em até 5 dias úteis com evidências técnicas. Perda comprovada: devolução das arras, sem demais penalidades. Evidências insuficientes: inadimplemento ordinário aplica-se."
+                </p>
+              </>
             )}
           </div>
           <p className="text-gray-500"><strong>IP da Assinatura:</strong> {neg.ipAssinatura}</p>

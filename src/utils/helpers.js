@@ -43,6 +43,7 @@ export function getStatusColor(status) {
     notificada: { bg: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-500' },
     em_execucao: { bg: 'bg-red-200', text: 'text-red-800', dot: 'bg-red-700' },
     concluida: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+    perda_safra_em_apuracao: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
   };
   return map[status] || { bg: 'bg-gray-100', text: 'text-gray-600', dot: 'bg-gray-400' };
 }
@@ -55,6 +56,7 @@ export function getStatusLabel(status) {
     notificada: 'Notificada',
     em_execucao: 'Em Execução',
     concluida: 'Concluída',
+    perda_safra_em_apuracao: 'Perda de Safra em Apuração',
   };
   return map[status] || status;
 }

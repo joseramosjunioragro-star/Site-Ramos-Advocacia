@@ -3,25 +3,29 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Shield, AlertCircle, CheckCircle, FileText,
   Calendar, MapPin, User, Phone, DollarSign, Gavel,
-  RefreshCw, Check
+  RefreshCw, Check, Leaf, Upload
 } from 'lucide-react';
 import useStore from '../store/useStore';
 import Modal from '../components/Modal';
 import {
   formatCurrency, formatDate, getStatusColor,
-  getStatusLabel, getTipoLabel, diasParaVencer, calcularTaxa, sha256
+  getStatusLabel, getTipoLabel, diasParaVencer, calcularTaxa, sha256, getClientIp
 } from '../utils/helpers';
+import { uploadProvaFile } from '../services/storage.service';
+import { isSupabaseEnabled } from '../lib/supabase';
 
 export default function DetalhesNegociacao() {
   const { id } = useParams();
   const navigate = useNavigate();
   const negociacoes = useStore((s) => s.negociacoes);
+  const perdas = useStore((s) => s.perdas);
   const user = useStore((s) => s.user);
   const addAditivo = useStore((s) => s.addAditivo);
   const aceitarAditivo = useStore((s) => s.aceitarAditivo);
   const notificarDevedor = useStore((s) => s.notificarDevedor);
   const executarDivida = useStore((s) => s.executarDivida);
   const darBaixa = useStore((s) => s.darBaixa);
+  const comunicarPerdaSafra = useStore((s) => s.comunicarPerdaSafra);
 
   const neg = negociacoes.find((n) => n.id === id);
 
@@ -30,6 +34,15 @@ export default function DetalhesNegociacao() {
   const [showBaixaModal, setShowBaixaModal] = useState(false);
   const [showPDFModal, setShowPDFModal] = useState(false);
   const [showForenseModal, setShowForenseModal] = useState(false);
+  const [showPerdaModal, setShowPerdaModal] = useState(false);
+  const [perdaConfirmada, setPerdaConfirmada] = useState(null);
+  const [perdaForm, setPerdaForm] = useState({
+    tipoEvento: '',
+    dataOcorrencia: '',
+    descricao: '',
+    arquivo: null,
+  });
+  const [perdaError, setPerdaError] = useState('');
   const [renegForm, setRenegForm] = useState({ novaData: '', motivo: '' });
   const [pacoteForense, setPacoteForense] = useState(null);
   const [baixaConfirmada, setBaixaConfirmada] = useState(false);
@@ -108,6 +121,50 @@ export default function DetalhesNegociacao() {
     }
   };
 
+  const handleComunicarPerda = async () => {
+    if (!perdaForm.tipoEvento || !perdaForm.dataOcorrencia || !perdaForm.descricao || submitting) return;
+    setSubmitting(true);
+    setPerdaError('');
+    try {
+      let hashEvidencias = null;
+      let arquivoUrl = null;
+
+      if (perdaForm.arquivo) {
+        if (perdaForm.arquivo.size > 10 * 1024 * 1024) {
+          setPerdaError('Arquivo excede o limite de 10 MB.');
+          setSubmitting(false);
+          return;
+        }
+        const arrayBuffer = await perdaForm.arquivo.arrayBuffer();
+        hashEvidencias = await sha256(arrayBuffer);
+        if (isSupabaseEnabled && user?.id) {
+          arquivoUrl = await uploadProvaFile(user.id, perdaForm.arquivo);
+        }
+      } else {
+        hashEvidencias = await sha256(perdaForm.descricao + perdaForm.dataOcorrencia + Date.now());
+      }
+
+      const ip = await getClientIp();
+
+      const row = await comunicarPerdaSafra(neg.id, {
+        tipoEvento: perdaForm.tipoEvento,
+        dataOcorrencia: perdaForm.dataOcorrencia,
+        descricao: perdaForm.descricao,
+        hashEvidencias,
+        arquivoUrl,
+        ip,
+      });
+
+      setPerdaConfirmada({ ...row, hashEvidencias });
+    } catch (err) {
+      console.error('[TerraForte] comunicarPerdaSafra error:', err);
+      setPerdaError(err.message || 'Erro ao registrar. Tente novamente.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const perdasNeg = perdas.filter((p) => p.negociacaoId === neg.id);
   const pendingAditivos = neg.aditivos?.filter((a) => a.status === 'pendente') || [];
 
   return (
@@ -251,6 +308,35 @@ export default function DetalhesNegociacao() {
           </div>
         )}
 
+        {/* Perdas de Safra registradas */}
+        {perdasNeg.length > 0 && (
+          <div className="card">
+            <h2 className="font-bold text-gray-800 flex items-center gap-2 mb-3">
+              <Leaf size={16} className="text-amber-600" /> Perdas de Safra Registradas
+            </h2>
+            {perdasNeg.map((p) => (
+              <div key={p.id} className="border-l-4 border-amber-400 pl-3 py-2 mb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-bold text-gray-700">{p.tipoEvento?.replace(/_/g, ' ')}</p>
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                    p.statusRevisao === 'aprovado' ? 'bg-green-100 text-green-700' :
+                    p.statusRevisao === 'rejeitado' ? 'bg-red-100 text-red-700' :
+                    'bg-amber-100 text-amber-700'
+                  }`}>
+                    {p.statusRevisao === 'em_apuracao' ? '⏳ Em Apuração' :
+                     p.statusRevisao === 'aprovado' ? '✓ Aprovado' : '✗ Rejeitado'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">Ocorrência: {formatDate(p.dataOcorrencia)}</p>
+                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{p.descricao}</p>
+                {p.hashEvidencias && (
+                  <p className="font-mono text-xs text-amber-600 mt-1 truncate">Hash: {p.hashEvidencias}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Assinatura Forense */}
         {neg.ipAssinatura && (
           <div className="card">
@@ -274,6 +360,16 @@ export default function DetalhesNegociacao() {
               className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg"
             >
               <RefreshCw size={18} /> Pedir Mais Prazo (Aditivo)
+            </button>
+          )}
+
+          {/* Comunicar Perda de Safra — apenas venda antecipada ativa ou vencida */}
+          {neg.tipo === 'futuro' && ['ativa', 'vencida'].includes(neg.status) && (
+            <button
+              onClick={() => setShowPerdaModal(true)}
+              className="w-full bg-amber-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg"
+            >
+              <Leaf size={18} /> Comunicar Perda de Safra
             </button>
           )}
 
@@ -451,6 +547,134 @@ export default function DetalhesNegociacao() {
         )}
       </Modal>
 
+      {/* Perda de Safra Modal */}
+      <Modal
+        isOpen={showPerdaModal}
+        onClose={() => { setShowPerdaModal(false); setPerdaConfirmada(null); setPerdaForm({ tipoEvento: '', dataOcorrencia: '', descricao: '', arquivo: null }); setPerdaError(''); }}
+        title="🌿 Comunicar Perda de Safra"
+      >
+        {!perdaConfirmada ? (
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="font-bold text-amber-800 text-sm mb-2">Requisitos Legais — Cláusula 2.3</p>
+              <ul className="text-xs text-amber-700 space-y-1">
+                <li>• Notifique dentro de <strong>5 dias úteis</strong> após ciência do evento</li>
+                <li>• Descreva o evento com precisão e evidências</li>
+                <li>• Perda comprovada = devolver arras, sem penalidade de inadimplemento</li>
+                <li>• Evidências insuficientes = regras ordinárias de inadimplemento aplicam-se</li>
+              </ul>
+            </div>
+
+            {perdaError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 font-medium flex items-center gap-2">
+                <AlertCircle size={14} className="flex-shrink-0" /> {perdaError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Tipo de Evento *</label>
+              <select
+                className="input-field"
+                value={perdaForm.tipoEvento}
+                onChange={(e) => setPerdaForm({ ...perdaForm, tipoEvento: e.target.value })}
+              >
+                <option value="">Selecione</option>
+                <option value="chuvas_excessivas">Chuvas Excessivas</option>
+                <option value="seca">Seca / Estiagem Prolongada</option>
+                <option value="geada">Geada</option>
+                <option value="granizo">Granizo</option>
+                <option value="fitossanitario">Evento Fitossanitário (Praga/Doença)</option>
+                <option value="inundacao">Inundação</option>
+                <option value="outro">Outro Evento Extraordinário</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Data de Ocorrência *</label>
+              <input
+                type="date"
+                className="input-field"
+                value={perdaForm.dataOcorrencia}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => setPerdaForm({ ...perdaForm, dataOcorrencia: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Descrição Detalhada do Evento *</label>
+              <textarea
+                className="input-field min-h-28 resize-none"
+                placeholder="Descreva o evento com precisão: localidade afetada, extensão da perda, documentos emitidos por órgão competente (EMBRAPA, SENAR, seguradora, etc.)..."
+                value={perdaForm.descricao}
+                onChange={(e) => setPerdaForm({ ...perdaForm, descricao: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Evidência (Foto/Laudo/Documento)</label>
+              <label className="block border-2 border-dashed border-amber-300 rounded-xl p-4 text-center cursor-pointer hover:border-amber-500 transition-colors">
+                <Upload size={20} className="text-amber-400 mx-auto mb-1" />
+                <p className="text-xs text-gray-500">Laudo técnico, foto, declaração de órgão</p>
+                <p className="text-xs text-gray-400 mt-0.5">JPG, PNG, PDF até 10 MB</p>
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  onChange={(e) => {
+                    setPerdaError('');
+                    setPerdaForm({ ...perdaForm, arquivo: e.target.files?.[0] || null });
+                  }}
+                />
+              </label>
+              {perdaForm.arquivo && (
+                <div className="flex items-center gap-2 mt-2 bg-green-50 rounded-lg px-3 py-2">
+                  <Check size={14} className="text-green-500" />
+                  <p className="text-xs text-green-700 font-medium">
+                    {perdaForm.arquivo.name} ({(perdaForm.arquivo.size / 1024).toFixed(0)} KB)
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleComunicarPerda}
+              disabled={!perdaForm.tipoEvento || !perdaForm.dataOcorrencia || !perdaForm.descricao || submitting}
+              className="w-full bg-gradient-to-r from-amber-500 to-amber-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+            >
+              {submitting ? (
+                <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Registrando...</>
+              ) : (
+                <><Leaf size={18} /> Registrar Comunicado de Perda</>
+              )}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Leaf size={28} className="text-amber-600" />
+              </div>
+              <p className="font-bold text-gray-800 text-lg">Perda Comunicada!</p>
+              <p className="text-sm text-gray-500">Status: <strong>Em Apuração</strong></p>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2 text-xs">
+              <p className="font-bold text-amber-800">Registro forense gerado — ISO 27037</p>
+              <p className="text-amber-700 font-mono break-all">Hash: {perdaConfirmada.hashEvidencias}</p>
+              <p className="text-amber-600">Timestamp: {new Date().toUTCString()}</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-700 leading-relaxed">
+              <strong>Próximos passos:</strong> O comprador será notificado. As penalidades de inadimplemento ordinário ficam suspensas até a conclusão da apuração. Certifique-se de apresentar laudos de órgão competente (EMBRAPA, SENAR, seguradora agrícola) ao seu assessor jurídico.
+            </div>
+            <button
+              onClick={() => { setShowPerdaModal(false); setPerdaConfirmada(null); }}
+              className="w-full btn-primary"
+            >
+              Fechar
+            </button>
+          </div>
+        )}
+      </Modal>
+
       {/* PDF Modal */}
       <Modal isOpen={showPDFModal} onClose={() => setShowPDFModal(false)} title="📄 Contrato" size="large">
         <div className="bg-white border border-gray-200 rounded-xl p-4 text-xs text-gray-700 space-y-3 max-h-96 overflow-y-auto">
@@ -480,9 +704,14 @@ export default function DetalhesNegociacao() {
               "As partes reconhecem que a presente assinatura eletrônica avançada possui plena validade jurídica nos termos do art. 784, § 4º do Código de Processo Civil, dispensando a necessidade de testemunhas. Este instrumento constitui Título Executivo Extrajudicial nos termos da Lei nº 14.620/2023, podendo ser objeto de execução forçada perante o Poder Judiciário."
             </p>
             {neg.tipo === 'futuro' && (
-              <p className="text-blue-800 text-xs leading-relaxed mt-2">
-                "CLÁUSULA DE IMPREVISIBILIDADE: As partes afastam expressamente a aplicação da teoria da imprevisibilidade (art. 478 do Código Civil) para quaisquer eventos climáticos, variações de preço ou condições de mercado, conforme jurisprudência consolidada do Superior Tribunal de Justiça."
-              </p>
+              <>
+                <p className="text-blue-800 text-xs leading-relaxed mt-2">
+                  "CLÁUSULA 2.2 — IMPREVISIBILIDADE AFASTADA: As partes afastam expressamente a aplicação da teoria da imprevisibilidade (CC, art. 478) para eventos climáticos ordinários, variações de preço e condições de mercado, conforme jurisprudência consolidada do Superior Tribunal de Justiça."
+                </p>
+                <p className="text-blue-800 text-xs leading-relaxed mt-2">
+                  "CLÁUSULA 2.3 — PERDA EXTRAORDINÁRIA DE SAFRA: Em caso de impossibilidade comprovada de entrega decorrente exclusivamente de perda extraordinária de produção causada por chuvas excessivas, eventos climáticos severos, colapso fitossanitário relevante ou força maior, o Produtor deverá: (i) notificar formalmente o Comprador pela Plataforma dentro de 5 (cinco) dias úteis após ciência do evento; (ii) anexar evidências técnicas (laudos EMBRAPA, SENAR, seguradora agrícola ou órgão competente); (iii) descrever a extensão da perda. O sistema registrará o contrato como 'Perda de Safra em Apuração' e as penalidades de inadimplemento ordinário ficarão suspensas durante a apuração. Em caso de perda comprovada, o Produtor restituirá as arras recebidas, sem incidência das penalidades previstas na Cláusula 3. A insuficiência ou ausência de evidências sujeita o caso às regras ordinárias de inadimplemento contratual desta Cláusula. Esta exceção não se aplica a entregas parciais realizáveis."
+                </p>
+              </>
             )}
             {neg.compradorSolidario && (
               <p className="text-red-700 text-xs leading-relaxed mt-2 font-bold">
