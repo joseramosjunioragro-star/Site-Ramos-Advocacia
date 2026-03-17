@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS provas_forenses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   usuario_id UUID REFERENCES usuarios(id),
   negociacao_id UUID REFERENCES negociacoes(id),
-  tipo_prova TEXT CHECK (tipo IN ('conversa', 'recibo', 'foto', 'documento', 'outro')),
+  tipo_prova TEXT CHECK (tipo_prova IN ('conversa', 'recibo', 'foto', 'documento', 'outro')),
   descricao TEXT NOT NULL,
   arquivo_url TEXT, -- Supabase Storage
   arquivo_nome TEXT,
